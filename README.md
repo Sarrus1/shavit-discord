@@ -16,7 +16,7 @@ The embeds will look like this:
 - SMJansson (included)
 - SteamWorks (included)
 - Discord_api (included)
-- [SMRipExt](https://github.com/ErikMinekus/sm-ripext) (optional if you don't want the profile picture)
+- [SMRipExt](https://github.com/ErikMinekus/sm-ripext)
 
 
 ## Installation ##
