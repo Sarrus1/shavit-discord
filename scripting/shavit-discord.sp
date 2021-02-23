@@ -7,7 +7,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "1.2"
+#define PLUGIN_VERSION "1.2.1"
 
 
 char g_cCurrentMap[PLATFORM_MAX_PATH],
@@ -26,7 +26,7 @@ ConVar g_cvHostname,
 
 char g_cHostname[128];
 
-HTTPClient httpClient;
+bool g_bRIPExt = false;
 
 public Plugin myinfo =
 {
@@ -60,6 +60,26 @@ public void OnPluginStart()
 }
 
 
+public void OnAllPluginsLoaded()
+{
+  g_bRIPExt = LibraryExists("ripext");
+}
+
+
+public void OnLibraryAdded(const char[] name)
+{
+	if (StrEqual(name, "ripext"))
+		g_bRIPExt = true;
+}
+
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if (StrEqual(name, "ripext"))
+		g_bRIPExt = false;
+}
+
+
 public void OnConVarChanged( ConVar convar, const char[] oldValue, const char[] newValue )
 {
 	g_cvHostname.GetString( g_cHostname, sizeof( g_cHostname ) );
@@ -85,10 +105,10 @@ public void Shavit_OnWorldRecord( int client, int style, float time, int jumps, 
 {
 	if( GetConVarInt(g_cvMinimumrecords) > 0 && Shavit_GetRecordAmount( style, track ) < GetConVarInt(g_cvMinimumrecords) ) // dont print if its a new record to avoid spam for new maps
 		return;
-	if(StrEqual(g_szApiKey, ""))
-		sendDiscordAnnouncement(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
-	else
+	if(!StrEqual(g_szApiKey, "") && g_bRIPExt)
 		GetProfilePictureURL(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
+	else
+		sendDiscordAnnouncement(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
 }
 
 
@@ -177,6 +197,8 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 
 stock void GetProfilePictureURL( int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
 {
+	HTTPClient httpClient;
+
 	DataPack pack = new DataPack();
 	pack.WriteCell(client);
 	pack.WriteCell(style);
@@ -194,7 +216,7 @@ stock void GetProfilePictureURL( int client, int style, float time, int jumps, i
 	 szSteamID[64];
 	
 	GetClientAuthId(client, AuthId_SteamID64, szSteamID, sizeof szSteamID, true);
-
+	
 	Format(szRequestBuffer, sizeof szRequestBuffer, "ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s&format=json", g_szApiKey,szSteamID);
 	httpClient = new HTTPClient("https://api.steampowered.com");
 	httpClient.Get(szRequestBuffer, OnResponseReceived, pack);
