@@ -8,14 +8,15 @@
 Makes discord bot post message when server record is beaten.
 The embeds will look like this:
 
-![Preview](https://raw.githubusercontent.com/Sarrus1/shavit-discord/master/img/Preview.PNG)
+![Preview1](https://raw.githubusercontent.com/Sarrus1/shavit-discord/master/img/Preview1.PNG)
+![Preview2](https://raw.githubusercontent.com/Sarrus1/shavit-discord/master/img/Preview2.PNG)
 
 ## Requirements ##
 - Sourcemod and Metamod
 - SMJansson (included)
 - SteamWorks (included)
 - Discord_api (included)
-- [SMRipExt](https://github.com/ErikMinekus/sm-ripext) (optional if you don't want the profile picture)
+- [SMRipExt](https://github.com/ErikMinekus/sm-ripext)
 
 
 ## Installation ##
