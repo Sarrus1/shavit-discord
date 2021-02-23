@@ -222,14 +222,12 @@ stock void OnResponseReceived(HTTPResponse response, DataPack pack)
 	JSONObject Response = view_as<JSONObject>(objects.Get("response"));
 	JSONArray players = view_as<JSONArray>(Response.Get("players"));
 	int playerlen = players.Length;
-	PrintToServer("%d", playerlen);
 	
 	JSONObject player;
 	for (int i = 0; i < playerlen; i++)
 	{
 		player = view_as<JSONObject>(players.Get(i));
 		player.GetString("avatarmedium", g_szPictureURL, sizeof(g_szPictureURL));
-		PrintToServer(g_szPictureURL);
 		delete player;
   }
 	sendDiscordAnnouncement(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
