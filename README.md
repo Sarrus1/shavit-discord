@@ -5,13 +5,16 @@
 
 
 ## Description ##
-Makes discord bot post message when server WR is beaten.
+Makes discord bot post message when server record is beaten.
+The embeds will look like this:
+
 
 ## Requirements ##
 - Sourcemod and Metamod
-- SmJansson (included)
+- SMJansson (included)
 - SteamWorks (included)
 - Discord_api (included)
+- ![SMRipExt](https://github.com/ErikMinekus/sm-ripext) (optional)
 
 
 ## Installation ##
