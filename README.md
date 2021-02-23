@@ -8,23 +8,25 @@
 Makes discord bot post message when server record is beaten.
 The embeds will look like this:
 
+![Preview](https://raw.githubusercontent.com/Sarrus1/shavit-discord/master/img/Preview.PNG)
 
 ## Requirements ##
 - Sourcemod and Metamod
 - SMJansson (included)
 - SteamWorks (included)
 - Discord_api (included)
-- ![SMRipExt](https://github.com/ErikMinekus/sm-ripext) (optional)
+- [SMRipExt](https://github.com/ErikMinekus/sm-ripext) (optional if you don't want the profile picture)
 
 
 ## Installation ##
 1. Grab the latest release from the release page and unzip it in your sourcemod folder.
 2. Restart the server or type `sm plugins load shavit-discord` in the console to load the plugin.
-3. The config file will be automatically generated in cfg/sourcemod/
+3. The config file will be automatically generated in `cfg/sourcemod/` and is named `plugin.shavit-discord.cfg`.
+4. IMPORTANT: If you want to use the profile picture feature, make sure to add your steam web api key in `cfg/sourcemod/plugin.shavit-discord.cfg`.
 
 
 ## Configuration ##
-- Once the plugin has been loaded, you can modify the cvars in cfg/sourcemod/plugin.shavit-discord.cfg.
+- Once the plugin has been loaded, you can modify the cvars in `cfg/sourcemod/plugin.shavit-discord.cfg`.
 
 
 ## Contacts ##
