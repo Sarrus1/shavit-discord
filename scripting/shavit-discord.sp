@@ -275,3 +275,16 @@ stock void RemoveWorkshop(char[] szMapName, int len)
 	szBuffer[i] = szCompare[0];
 	ReplaceString(szMapName, len, szBuffer, "", true);
 }
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	MarkNativeAsOptional("HTTPClient.HTTPClient");
+	MarkNativeAsOptional("HTTPClient.SetHeader");
+	MarkNativeAsOptional("HTTPClient.Get");
+	MarkNativeAsOptional("JSONObject.Get");
+	MarkNativeAsOptional("JSONObject.GetString");
+	MarkNativeAsOptional("HTTPResponse.Status.get");
+	MarkNativeAsOptional("JSONArray.Length.get");
+	MarkNativeAsOptional("JSONArray.Get");
+	MarkNativeAsOptional("HTTPResponse.Data.get");
+}
