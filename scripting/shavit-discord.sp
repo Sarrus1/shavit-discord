@@ -11,18 +11,18 @@
 
 
 char g_cCurrentMap[PLATFORM_MAX_PATH],
-	g_szApiKey[64],
-	g_szPictureURL[1024];
+g_szApiKey[64],
+g_szPictureURL[1024];
 
 ConVar g_cvHostname,
-	g_cvWebhook,
-	g_cvMinimumrecords,
-	g_cvThumbnailUrlRoot,
-	g_cvBotUsername,
-	g_cvFooterUrl,
-	g_cvMainEmbedColor,
-	g_cvBonusEmbedColor,
-	g_cvSteamWebAPIKey;
+g_cvWebhook,
+g_cvMinimumrecords,
+g_cvThumbnailUrlRoot,
+g_cvBotUsername,
+g_cvFooterUrl,
+g_cvMainEmbedColor,
+g_cvBonusEmbedColor,
+g_cvSteamWebAPIKey;
 
 char g_cHostname[128];
 
@@ -51,32 +51,32 @@ public void OnPluginStart()
 	g_cvHostname = FindConVar("hostname");
 	g_cvHostname.GetString( g_cHostname, sizeof( g_cHostname ) );
 	g_cvHostname.AddChangeHook( OnConVarChanged );
-
+	
 	RegAdminCmd("sm_discordtest", CommandDiscordTest, ADMFLAG_ROOT);
-
+	
 	GetConVarString(g_cvSteamWebAPIKey, g_szApiKey, sizeof g_szApiKey);
-
+	
 	AutoExecConfig(true, "plugin.shavit-discord");
 }
 
 
 public void OnAllPluginsLoaded()
 {
-  g_bRIPExt = LibraryExists("ripext");
+	g_bRIPExt = LibraryExists("ripext");
 }
 
 
 public void OnLibraryAdded(const char[] name)
 {
 	if (StrEqual(name, "ripext"))
-		g_bRIPExt = true;
+	g_bRIPExt = true;
 }
 
 
 public void OnLibraryRemoved(const char[] name)
 {
 	if (StrEqual(name, "ripext"))
-		g_bRIPExt = false;
+	g_bRIPExt = false;
 }
 
 
@@ -96,29 +96,29 @@ public void OnMapStart()
 
 public Action CommandDiscordTest(int client, int args)
 {
-	Shavit_OnWorldRecord(client, 1, 12.3, 35, 23, 93.25, 1, 14.01, 14.5, 82.3);
+	Shavit_OnWorldRecord(client, 1, 12.3, 35, 23, 93.25, 1, 14.01, 14.5, 82.3, 0.0, 0.0, 0);
 	CPrintToChat(client, "{green}[shavit-discord] {default}Discord Test Message has been sent.");
 }
 
 
-public void Shavit_OnWorldRecord( int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
+public void Shavit_OnWorldRecord(int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
 {
 	if( GetConVarInt(g_cvMinimumrecords) > 0 && Shavit_GetRecordAmount( style, track ) < GetConVarInt(g_cvMinimumrecords) ) // dont print if its a new record to avoid spam for new maps
-		return;
+	return;
 	if(!StrEqual(g_szApiKey, "") && g_bRIPExt)
-		GetProfilePictureURL(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
+	GetProfilePictureURL(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
 	else
-		sendDiscordAnnouncement(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
+	sendDiscordAnnouncement(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
 }
 
 
 stock void sendDiscordAnnouncement(int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
 {
 	char sWebhook[512],
-		szMainColor[64],
-		szBonusColor[64],
-		szBotUsername[128];
-
+	szMainColor[64],
+	szBonusColor[64],
+	szBotUsername[128];
+	
 	GetConVarString(g_cvWebhook, sWebhook, sizeof sWebhook);
 	GetConVarString(g_cvMainEmbedColor, szMainColor, sizeof szMainColor);
 	GetConVarString(g_cvBonusEmbedColor, szBonusColor, sizeof szBonusColor);
@@ -158,35 +158,35 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 	FormatSeconds( oldwr, szOldTime, sizeof( szOldTime ) );
 	Format( szOldTime, sizeof( szOldTime ), "%ss", szOldTime );
 	embed.AddField( "Previous Time:", szOldTime, true );
-
+	
 	Format( buffer, sizeof( buffer ), "**Strafes**: %i  **Sync**: %.2f%%  **Jumps**: %i  **Perfect jumps**: %.2f%%", strafes, sync, jumps, perfs );
 	embed.AddField( "Stats:", buffer, false );
 	
-
+	
 	//Send the image of the map
 	char szUrl[1024];
-
+	
 	GetConVarString(g_cvThumbnailUrlRoot, szUrl, 1024);
-
+	
 	if (!StrEqual(szUrl, ""))
 	{
 		StrCat(szUrl, sizeof(szUrl), g_cCurrentMap);
 		StrCat(szUrl, sizeof(szUrl), ".jpg");
 	}
-
+	
 	if(StrEqual(g_szPictureURL, ""))
-		embed.SetThumb(szUrl);
+	embed.SetThumb(szUrl);
 	else
 	{
 		embed.SetImage(szUrl);
 		embed.SetThumb(g_szPictureURL);
 	}
-
+	
 	char szFooterUrl[1024];
 	GetConVarString(g_cvFooterUrl, szFooterUrl, sizeof szFooterUrl);
 	if (!StrEqual(szFooterUrl, ""))
-		embed.SetFooterIcon( szFooterUrl );
-
+	embed.SetFooterIcon( szFooterUrl );
+	
 	Format( buffer, sizeof( buffer ), "Server: %s", g_cHostname );
 	embed.SetFooter( buffer );
 	
@@ -198,7 +198,7 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 stock void GetProfilePictureURL( int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
 {
 	HTTPClient httpClient;
-
+	
 	DataPack pack = new DataPack();
 	pack.WriteCell(client);
 	pack.WriteCell(style);
@@ -211,9 +211,9 @@ stock void GetProfilePictureURL( int client, int style, float time, int jumps, i
 	pack.WriteCell(oldtime);
 	pack.WriteCell(perfs);
 	pack.Reset();
-
+	
 	char szRequestBuffer[1024],
-	 szSteamID[64];
+	szSteamID[64];
 	
 	GetClientAuthId(client, AuthId_SteamID64, szSteamID, sizeof szSteamID, true);
 	
@@ -236,9 +236,9 @@ stock void OnResponseReceived(HTTPResponse response, DataPack pack)
 	float oldwr = pack.ReadCell();
 	float oldtime = pack.ReadCell();
 	float perfs = pack.ReadCell();
-
-	if (response.Status != HTTPStatus_OK) 
-		return;
+	
+	if (response.Status != HTTPStatus_OK)
+	return;
 	
 	JSONObject objects = view_as<JSONObject>(response.Data);
 	JSONObject Response = view_as<JSONObject>(objects.Get("response"));
@@ -251,7 +251,7 @@ stock void OnResponseReceived(HTTPResponse response, DataPack pack)
 		player = view_as<JSONObject>(players.Get(i));
 		player.GetString("avatarmedium", g_szPictureURL, sizeof(g_szPictureURL));
 		delete player;
-  }
+	}
 	sendDiscordAnnouncement(client, style, time, jumps, strafes, sync, track, oldwr, oldtime, perfs);
 }
 
@@ -260,11 +260,11 @@ stock void RemoveWorkshop(char[] szMapName, int len)
 {
 	int i=0;
 	char szBuffer[16], szCompare[1] = "/";
-
+	
 	// Return if "workshop/" is not in the mapname
 	if(ReplaceString(szMapName, len, "workshop/", "", true) != 1)
-		return;
-
+	return;
+	
 	// Find the index of the last /
 	do
 	{
