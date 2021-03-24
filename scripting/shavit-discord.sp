@@ -47,15 +47,15 @@ public void OnPluginStart()
 	g_cvMainEmbedColor = CreateConVar("sm_bhop_discord_main_color", "#00ffff", "Color of embed for when main wr is beaten");
 	g_cvBonusEmbedColor = CreateConVar("sm_bhop_discord_bonus_color", "#ff0000", "Color of embed for when bonus wr is beaten");
 	g_cvSteamWebAPIKey = CreateConVar("kzt_discord_steam_api_key", "", "Allows the use of the player profile picture, leave blank to disable. The key can be obtained here: https://steamcommunity.com/dev/apikey", FCVAR_PROTECTED);
-	
+
 	g_cvHostname = FindConVar("hostname");
 	g_cvHostname.GetString( g_cHostname, sizeof( g_cHostname ) );
 	g_cvHostname.AddChangeHook( OnConVarChanged );
-	
+
 	RegAdminCmd("sm_discordtest", CommandDiscordTest, ADMFLAG_ROOT);
-	
+
 	GetConVarString(g_cvSteamWebAPIKey, g_szApiKey, sizeof g_szApiKey);
-	
+
 	AutoExecConfig(true, "plugin.shavit-discord");
 }
 
@@ -118,23 +118,23 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 	szMainColor[64],
 	szBonusColor[64],
 	szBotUsername[128];
-	
+
 	GetConVarString(g_cvWebhook, sWebhook, sizeof sWebhook);
 	GetConVarString(g_cvMainEmbedColor, szMainColor, sizeof szMainColor);
 	GetConVarString(g_cvBonusEmbedColor, szBonusColor, sizeof szBonusColor);
 	GetConVarString(g_cvBotUsername, szBotUsername, sizeof szBotUsername);
-	
+
 	DiscordWebHook hook = new DiscordWebHook( sWebhook );
 	hook.SlackMode = true;
 	hook.SetUsername( szBotUsername );
-	
+
 	MessageEmbed embed = new MessageEmbed();
-	
+
 	embed.SetColor( ( track == Track_Main ) ? szMainColor : szBonusColor );
-	
+
 	char styleName[128];
 	Shavit_GetStyleStrings( style, sStyleName, styleName, sizeof( styleName ));
-	
+
 	char buffer[512];
 	if(track == Track_Main) {
 		Format( buffer, sizeof( buffer ), "__**New World Record**__ | **%s** - **%s**", g_cCurrentMap, styleName );
@@ -142,38 +142,38 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 		Format( buffer, sizeof( buffer ), "__**New Bonus #%i World Record**__ | **%s** - **%s**", track, g_cCurrentMap, styleName );
 	}
 	embed.SetTitle( buffer );
-	
+
 	char steamid[65];
 	GetClientAuthId( client, AuthId_SteamID64, steamid, sizeof( steamid ) );
 	Format( buffer, sizeof( buffer ), "[%N](http://www.steamcommunity.com/profiles/%s)", client, steamid );
 	embed.AddField( "Player:", buffer, true	);
-	
+
 	char szOldTime[128];
 	FormatSeconds( time, buffer, sizeof( buffer ) );
 	FormatSeconds( time - oldtime, szOldTime, sizeof( szOldTime ) );
-	
+
 	Format( buffer, sizeof( buffer ), "%ss (%ss)", buffer, szOldTime );
 	embed.AddField( "Time:", buffer, true );
-	
+
 	FormatSeconds( oldwr, szOldTime, sizeof( szOldTime ) );
 	Format( szOldTime, sizeof( szOldTime ), "%ss", szOldTime );
 	embed.AddField( "Previous Time:", szOldTime, true );
-	
+
 	Format( buffer, sizeof( buffer ), "**Strafes**: %i  **Sync**: %.2f%%  **Jumps**: %i  **Perfect jumps**: %.2f%%", strafes, sync, jumps, perfs );
 	embed.AddField( "Stats:", buffer, false );
-	
-	
+
+
 	//Send the image of the map
 	char szUrl[1024];
-	
+
 	GetConVarString(g_cvThumbnailUrlRoot, szUrl, 1024);
-	
+
 	if (!StrEqual(szUrl, ""))
 	{
 		StrCat(szUrl, sizeof(szUrl), g_cCurrentMap);
 		StrCat(szUrl, sizeof(szUrl), ".jpg");
 	}
-	
+
 	if(StrEqual(g_szPictureURL, ""))
 	embed.SetThumb(szUrl);
 	else
@@ -181,15 +181,15 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 		embed.SetImage(szUrl);
 		embed.SetThumb(g_szPictureURL);
 	}
-	
+
 	char szFooterUrl[1024];
 	GetConVarString(g_cvFooterUrl, szFooterUrl, sizeof szFooterUrl);
 	if (!StrEqual(szFooterUrl, ""))
 	embed.SetFooterIcon( szFooterUrl );
-	
+
 	Format( buffer, sizeof( buffer ), "Server: %s", g_cHostname );
 	embed.SetFooter( buffer );
-	
+
 	hook.Embed( embed );
 	hook.Send();
 }
@@ -198,7 +198,7 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 stock void GetProfilePictureURL( int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
 {
 	HTTPClient httpClient;
-	
+
 	DataPack pack = new DataPack();
 	pack.WriteCell(client);
 	pack.WriteCell(style);
@@ -211,12 +211,12 @@ stock void GetProfilePictureURL( int client, int style, float time, int jumps, i
 	pack.WriteCell(oldtime);
 	pack.WriteCell(perfs);
 	pack.Reset();
-	
+
 	char szRequestBuffer[1024],
 	szSteamID[64];
-	
+
 	GetClientAuthId(client, AuthId_SteamID64, szSteamID, sizeof szSteamID, true);
-	
+
 	Format(szRequestBuffer, sizeof szRequestBuffer, "ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s&format=json", g_szApiKey,szSteamID);
 	httpClient = new HTTPClient("https://api.steampowered.com");
 	httpClient.Get(szRequestBuffer, OnResponseReceived, pack);
@@ -236,15 +236,15 @@ stock void OnResponseReceived(HTTPResponse response, DataPack pack)
 	float oldwr = pack.ReadCell();
 	float oldtime = pack.ReadCell();
 	float perfs = pack.ReadCell();
-	
+
 	if (response.Status != HTTPStatus_OK)
 	return;
-	
+
 	JSONObject objects = view_as<JSONObject>(response.Data);
 	JSONObject Response = view_as<JSONObject>(objects.Get("response"));
 	JSONArray players = view_as<JSONArray>(Response.Get("players"));
 	int playerlen = players.Length;
-	
+
 	JSONObject player;
 	for (int i = 0; i < playerlen; i++)
 	{
@@ -260,11 +260,11 @@ stock void RemoveWorkshop(char[] szMapName, int len)
 {
 	int i=0;
 	char szBuffer[16], szCompare[1] = "/";
-	
+
 	// Return if "workshop/" is not in the mapname
 	if(ReplaceString(szMapName, len, "workshop/", "", true) != 1)
 	return;
-	
+
 	// Find the index of the last /
 	do
 	{
