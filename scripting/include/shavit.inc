@@ -23,9 +23,10 @@
 #endif
 #define _shavit_included
 
-#define SHAVIT_VERSION "2.7.0"
+#define SHAVIT_VERSION "3.0.4"
 #define STYLE_LIMIT 256
 #define MAX_ZONES 64
+#define MAX_STAGES 51 // 😐 kind of arbitrary but also some space between this and MAX_ZONES
 
 // HUD
 #define HUD_NONE				0
@@ -62,7 +63,6 @@ enum //ReplayStatus
 enum //ReplayBotType
 {
 	Replay_Central,
-	Replay_Legacy,  // TODO: REMOVE
 	Replay_Looping, // these are the ones that loop styles, tracks, and (eventually) stages...
 	Replay_Dynamic, // these are bots that spawn on !replay when the central bot is taken
 	Replay_Prop,    // A prop entity that is being used as a replay...
@@ -74,7 +74,9 @@ enum
 	CPR_NoTimer = (1 << 1),
 	CPR_InStartZone = (1 << 2),
 	CPR_NotOnGround = (1 << 3),
-	CPR_Moving = (1 << 4)
+	CPR_Moving = (1 << 4),
+	CPR_Duck = (1 << 5), // quack
+	CPR_InEndZone = (1 << 6),
 };
 
 enum
@@ -92,6 +94,8 @@ enum
 	Migration_AddZonesFlagsAndData,
 	Migration_AddPlayertimesCompletions,
 	Migration_AddCustomChatAccess,
+	Migration_AddPlayertimesExactTimeInt,
+	Migration_FixOldCompletionCounts, // old completions accidentally started at 2
 	MIGRATIONS_END
 };
 
@@ -155,49 +159,6 @@ enum struct stylestrings_t
 	char sStylePermission[64];
 }
 
-//TODO:REMOVE IN 3.0
-enum struct stylesettings_t
-{
-	bool bAutobhop;
-	bool bEasybhop;
-	int iPrespeed;
-	float fVelocityLimit;
-	bool bEnableBunnyhopping;
-	float fAiraccelerate;
-	float fRunspeed;
-	float fGravityMultiplier;
-	float fSpeedMultiplier;
-	float fTimescale;
-	float fVelocity;
-	float fBonusVelocity;
-	float fMinVelocity;
-	bool bBlockW;
-	bool bBlockA;
-	bool bBlockS;
-	bool bBlockD;
-	bool bBlockUse;
-	int iForceHSW;
-	int iBlockPLeft;
-	int iBlockPRight;
-	int iBlockPStrafe;
-	bool bUnranked;
-	bool bNoReplay;
-	bool bSync;
-	bool bStrafeCountW;
-	bool bStrafeCountA;
-	bool bStrafeCountS;
-	bool bStrafeCountD;
-	float fRankingMultiplier;
-	int iSpecial;
-	int iOrdering;
-	bool bInaccessible;
-	int iEnabled;
-	bool bKZCheckpoints;
-	bool bForceKeysOnGround;
-	float fJumpMultiplier;
-	float fJumpBonus;
-}
-
 enum struct chatstrings_t
 {
 	char sPrefix[64];
@@ -223,10 +184,13 @@ enum struct timer_snapshot_t
 	int iTimerTrack;
 	int iMeasuredJumps;
 	int iPerfectJumps;
-	float fTimeOffset[2];
+	float fZoneOffset[2];
 	float fDistanceOffset[2];
 	float fAvgVelocity;
 	float fMaxVelocity;
+	float fTimescale;
+	int iZoneIncrement;
+	float fTimescaledTicks;
 }
 
 enum struct cp_cache_t
@@ -234,7 +198,6 @@ enum struct cp_cache_t
 	float fPosition[3];
 	float fAngles[3];
 	float fVelocity[3];
-	float fBaseVelocity[3];
 	MoveType iMoveType;
 	float fGravity;
 	float fSpeed;
@@ -245,16 +208,17 @@ enum struct cp_cache_t
 	float fDuckSpeed; // m_flDuckSpeed in csgo; doesn't exist in css
 	int iFlags;
 	timer_snapshot_t aSnapshot;
-	int iTargetname;
-	int iClassname;
+	char sTargetname[64];
+	char sClassname[64];
 	ArrayList aFrames;
 	int iPreFrames;
-	int iTimerPreFrames;
 	bool bSegmented;
-	int iSerial;
 	bool bPractice;
 	int iGroundEntity;
 	int iSteamID;
+	ArrayList aEvents;
+	ArrayList aOutputWaits;
+	float vecLadderNormal[3];
 }
 
 enum struct frame_t
@@ -265,11 +229,13 @@ enum struct frame_t
 	// iReplayVersion >= 0x02
 	int flags;
 	MoveType mt;
-	// iReplayVersion >= 0x05
-	//float vel[3];
+	// Everything below is generally NOT loaded into memory for playback
+	// iReplayVersion >= 0x06
+	int mousexy; // `mousex | (mousey << 16)` // unpack with UnpackSignedShorts
+	int vel; // basically `forwardmove | (sidemove << 16)` // unpack with UnpackSignedShorts
 }
 
-enum struct framecache_t
+enum struct frame_cache_t
 {
 	int iFrameCount;
 	float fTime;
@@ -279,7 +245,8 @@ enum struct framecache_t
 	int iPreFrames;
 	ArrayList aFrames;
 	// iReplayVersion >= 0x05
-	//int iPostFrames;
+	int iPostFrames;
+	float fTickrate;
 }
 
 #if defined USES_CHAT_COLORS
@@ -347,7 +314,6 @@ stock Database GetTimerDatabaseHandle()
 			SetFailState("Timer startup failed. Reason: %s", sError);
 		}
 	}
-
 	else
 	{
 		db = SQLite_UseDatabase("shavit", sError, 255);
@@ -363,6 +329,21 @@ stock bool IsMySQLDatabase(Database db)
 	db.Driver.GetIdentifier(sDriver, 8);
 
 	return StrEqual(sDriver, "mysql", false);
+}
+
+stock void LowercaseString(char[] str)
+{
+	for (int i = 0; str[i] != 0; i++)
+	{
+		str[i] = CharToLower(str[i]);
+	}
+}
+
+stock void GetLowercaseMapName(char sMap[PLATFORM_MAX_PATH])
+{
+	GetCurrentMap(sMap, sizeof(sMap));
+	GetMapDisplayName(sMap, sMap, sizeof(sMap));
+	LowercaseString(sMap);
 }
 
 // retrieves the table prefix defined in configs/shavit-prefix.txt
@@ -418,8 +399,45 @@ stock int IPStringToAddress(const char[] ip)
 	return iIPAddress;
 }
 
+// Retrieves authid from STEAM_X:Y:Z and [U:1:123]
+stock int SteamIDToAuth(const char[] sInput)
+{
+	char sSteamID[32];
+	strcopy(sSteamID, sizeof(sSteamID), sInput);
+	ReplaceString(sSteamID, 32, "\"", "");
+
+	if (StrContains(sSteamID, "STEAM_") != -1)
+	{
+		ReplaceString(sSteamID, 32, "STEAM_", "");
+
+		char parts[3][11];
+		ExplodeString(sSteamID, ":", parts, 3, 11);
+
+		// Let X, Y and Z constants be defined by the SteamID: STEAM_X:Y:Z.
+		// Using the formula W=Z*2+Y, a SteamID can be converted:
+		return StringToInt(parts[2]) * 2 + StringToInt(parts[1]);
+	}
+	else if (StrContains(sSteamID, "U:1:") != -1)
+	{
+		ReplaceString(sSteamID, 32, "[", "");
+		ReplaceString(sSteamID, 32, "U:1:", "");
+		ReplaceString(sSteamID, 32, "]", "");
+
+		return StringToInt(sSteamID);
+	}
+
+	return StringToInt(sSteamID);
+}
+
+// Can be used to unpack frame_t.mousexy and frame_t.vel
+stock void UnpackSignedShorts(int x, int out[2])
+{
+	out[0] =  ((x        & 0xFFFF) ^ 0x8000) - 0x8000;
+	out[1] = (((x >> 16) & 0xFFFF) ^ 0x8000) - 0x8000;
+}
+
 // time formatting!
-stock void FormatSeconds(float time, char[] newtime, int newtimesize, bool precise = true)
+stock void FormatSeconds(float time, char[] newtime, int newtimesize, bool precise = true, bool nodecimal = false)
 {
 	float fTempTime = time;
 
@@ -429,17 +447,25 @@ stock void FormatSeconds(float time, char[] newtime, int newtimesize, bool preci
 	}
 
 	int iRounded = RoundToFloor(fTempTime);
-	float fSeconds = (iRounded % 60) + fTempTime - iRounded;
+	int iSeconds = (iRounded % 60);
+	float fSeconds = iSeconds + fTempTime - iRounded;
 
 	char sSeconds[8];
-	FormatEx(sSeconds, 8, precise? "%.03f":"%.01f", fSeconds);
+
+	if (nodecimal)
+	{
+		FormatEx(sSeconds, 8, "%d", iSeconds);
+	}
+	else
+	{
+		FormatEx(sSeconds, 8, precise? "%.3f":"%.1f", fSeconds);
+	}
 
 	if(fTempTime < 60.0)
 	{
 		strcopy(newtime, newtimesize, sSeconds);
 		FormatEx(newtime, newtimesize, "%s%s", (time < 0.0) ? "-":"", sSeconds);
 	}
-
 	else
 	{
 		int iMinutes = (iRounded / 60);
@@ -448,11 +474,10 @@ stock void FormatSeconds(float time, char[] newtime, int newtimesize, bool preci
 		{
 			FormatEx(newtime, newtimesize, "%s%d:%s%s", (time < 0.0)? "-":"", iMinutes, (fSeconds < 10)? "0":"", sSeconds);
 		}
-
 		else
 		{
+			int iHours = (iMinutes / 60);
 			iMinutes %= 60;
-			int iHours = (iRounded / 3600);
 
 			FormatEx(newtime, newtimesize, "%s%d:%s%d:%s%s", (time < 0.0)? "-":"", iHours, (iMinutes < 10)? "0":"", iMinutes, (fSeconds < 10)? "0":"", sSeconds);
 		}
@@ -523,6 +548,12 @@ stock int GetSpectatorTarget(int client, int fallback = -1)
 	return target;
 }
 
+stock float GetAngleDiff(float current, float previous)
+{
+	float diff = current - previous;
+	return diff - 360.0 * RoundToFloor((diff + 180.0) / 360.0);
+}
+
 /**
  * Called before shavit-core processes the client's usercmd.
  * Before this is called, safety checks (fake/dead clients) happen.
@@ -538,11 +569,10 @@ stock int GetSpectatorTarget(int client, int fallback = -1)
  * @param status					The player's timer status.
  * @param track						The player's timer track.
  * @param style						The player's bhop style.
- * @param stylesettings				A stylesettings_t struct that contains the player's bhop style's settings.
  * @param mouse						Mouse direction (x, y).
  * @return							Plugin_Continue to let shavit-core keep doing what it does, Plugin_Changed to pass different values.
  */
-forward Action Shavit_OnUserCmdPre(int client, int &buttons, int &impulse, float vel[3], float angles[3], TimerStatus status, int track, int style, stylesettings_t stylesettings, int mouse[2]);
+forward Action Shavit_OnUserCmdPre(int client, int &buttons, int &impulse, float vel[3], float angles[3], TimerStatus status, int track, int style, int mouse[2]);
 
 /**
  * Called just before shavit-core adds time to a player's timer.
@@ -552,10 +582,9 @@ forward Action Shavit_OnUserCmdPre(int client, int &buttons, int &impulse, float
  * @param client					Client index.
  * @param snapshot					A snapshot with the player's current timer. You cannot manipulate it here.
  * @param time						The time to be added to the player's timer.
- * @param stylesettings				A stylesettings_t struct that contains the player's bhop style's settings.
  * @noreturn
  */
-forward void Shavit_OnTimeIncrement(int client, timer_snapshot_t snapshot, float &time, stylesettings_t stylesettings);
+forward void Shavit_OnTimeIncrement(int client, timer_snapshot_t snapshot, float &time);
 
 /**
  * Called just before shavit-core adds time to a player's timer.
@@ -565,18 +594,27 @@ forward void Shavit_OnTimeIncrement(int client, timer_snapshot_t snapshot, float
  * @param client					Client index.
  * @param snapshot					A snapshot with the player's current timer. Read above in shavit.inc for more information.
  * @param time						The time to be added to the player's timer.
- * @param stylesettings				A stylesettings_t struct that contains the player's bhop style's settings.
  * @noreturn
  */
-forward void Shavit_OnTimeIncrementPost(int client, float time, stylesettings_t stylesettings);
+forward void Shavit_OnTimeIncrementPost(int client, float time);
+
+/**
+ * Called when a player's timer is about to start.
+ * (WARNING: Will be called every tick when the player stands at the start zone!)
+ *
+ * @param client                    Client index.
+ * @param track                     Timer track.
+ * @return                          Plugin_Continue to do nothing or anything else to not start the timer.
+ */
+forward Action Shavit_OnStartPre(int client, int track);
 
 /**
  * Called when a player's timer starts.
  * (WARNING: Will be called every tick when the player stands at the start zone!)
  *
- * @param client					Client index.
- * @param track						Timer track.
- * @return							Plugin_Continue to do nothing or anything else to not start the timer.
+ * @param client                    Client index.
+ * @param track                     Timer track.
+ * @return                          Unused.
  */
 forward Action Shavit_OnStart(int client, int track);
 
@@ -772,12 +810,12 @@ forward void Shavit_OnChatConfigLoaded();
 forward Action Shavit_OnTeleport(int client, int index);
 
 /**
- * Called when a player teleports with checkpoints.
+ * Called when a saves a checkpoint.
  *
  * @param client					Client index.
  * @param index						Checkpoint that was saved to.
  * @param overflow					Does this checkpoint shift the rest.
- * @return							Plugin_Continue to allow teleporting, anything else to prevent.
+ * @return							Plugin_Continue to allow saving, anything else to prevent.
  */
 forward Action Shavit_OnSave(int client, int index, bool overflow);
 
@@ -943,7 +981,7 @@ forward void Shavit_OnReplaySaved(int client, int style, float time, int jumps, 
  * Called when top left HUD updates.
  *
  * @param client					Client index that recieves the hud.
- * @param target					Client index that recieves the hud.
+ * @param target					Target entity that is either the client or what the client is spectating.
  * @param topleft					Reference to the HUD buffer.
  * @param topleftlength				Max length of the topleft buffer.
  * @return							Plugin_Handled or Plugin_Stop to block the HUD message from appearing. Anything else to pass along new values.
@@ -989,9 +1027,14 @@ forward void Shavit_OnTimeOffsetCalculated(int client, int zonetype, float offse
  * @param snapshot					A snapshot of the client's timer when printing the message.
  * @param overwrite					Modify the database? 0 - no. 1 - brand new record. 2 - new personal best.
  * @param rank						Rank on map.
+ * @param message					The finish message.
+ * @param maxlen					Buffer size of message.
+ * @param message2					A second line of info that is printed on finish.
+ * @param maxlen2					Buffer size of message2.
+ *
  * @return							Plugin_Handled or Plugin_Stop to stop the message. Anything else to use new values.
  */
-forward Action Shavit_OnFinishMessage(int client, bool &everyone, timer_snapshot_t snapshot, int overwrite, int rank, char[] message, int maxlen);
+forward Action Shavit_OnFinishMessage(int client, bool &everyone, timer_snapshot_t snapshot, int overwrite, int rank, char[] message, int maxlen, char[] message2, int maxlen2);
 
 /**
  * Called when a clients dynamic timescale has been changed.
@@ -1052,23 +1095,6 @@ forward void Shavit_OnProcessMovement(int client);
  * @noreturn
  */
 forward void Shavit_OnProcessMovementPost(int client);
-
-/**
- * Returns the game type the server is running.
- *
- * @return							Game type. (See "enum ServerGame")
- */
-#pragma deprecated Use GetEngineVersion() instead.
-native EngineVersion Shavit_GetGameType();
-
-/**
- * Returns the database handle the timer is using.
- *
- * @param hSQL						Handle to store the database on.
- * @noreturn
- */
- #pragma deprecated Use Shavit_GetDatabase() instead.
-native void Shavit_GetDB(Database &hSQL);
 
 /**
  * Returns bhoptimer's database handle.
@@ -1186,19 +1212,6 @@ native bool Shavit_ChangeClientStyle(int client, int style, bool force = false, 
 native void Shavit_FinishMap(int client, int track);
 
 /**
- * Stores the player's timer stats on variables
- *
- * @param client					Client index.
- * @param time						Time passed since the player started.
- * @param jumps						How many times the player jumped since he started.
- * @param style						Style, check "enum BhopStyle"
- * @param started					Timer started?
- * @noreturn
- */
-#pragma deprecated Use different natives or Shavit_SaveSnapshot instead.
-native void Shavit_GetTimer(int client, float &time, int &jumps, int &style, bool &started);
-
-/**
  * Retrieve a client's current time.
  *
  * @param client					Client index.
@@ -1242,10 +1255,51 @@ native TimerStatus Shavit_GetTimerStatus(int client);
  * Retrieve the zone ID for a given stage number.
  * Will return exception if stagenumber doesn't have a zone.
  *
- * @param client					Stage number.
+ * @param stage                     Stage number.
+ * @param track                     Track number.
  * @return                          Zone ID of stage.
  */
-native int Shavit_GetStageZone(int stage);
+native int Shavit_GetStageZone(int stage, int track=Track_Main);
+
+/**
+ * Retrieve the highest stage number for a given track.
+ *
+ * @param track						Track number.
+ * @return 							Number of stages.
+ */
+native int Shavit_GetHighestStage(int track);
+
+/**
+ * Retrieve the client's current stage number.
+ *
+ * @param client                    Client index.
+ * @return                          The client's current stage number.
+ */
+native int Shavit_GetClientLastStage(int client);
+
+/**
+ * Retrieve the WR's stage time.
+ *
+ * @param track                     Track index.
+ * @param style                     Style index.
+ * @param stage                     Stage number.
+ * @return                          The stage time of the WR run. Can be 0.0 if the WR run didn't hit the stage or if the stage doesn't exist.
+ */
+native float Shavit_GetStageWR(int track, int style, int stage);
+
+/**
+ * Retrieve the client's PB stage time.
+ *
+ * @param client                    Client index.
+ * @param track                     Track index.
+ * @param style                     Style index.
+ * @param stage                     Stage number.
+ * @return                          The stage time of the PB run. Can be 0.0 if the PB run didn't hit the stage or if the stage doesn't exist.
+ */
+//native float Shavit_GetStagePB(int client, int track, int style, int stage);
+
+//native float Shavit_GetStageWRCP(int track, int style, int stage);
+//native float Shavit_GetStagePBCP(int client, int track, int style, int stage);
 
 /**
  * Retrieve the amount of strafes done since the timer started.
@@ -1273,17 +1327,6 @@ native float Shavit_GetPerfectJumps(int client);
  * @return                          Amount of strafes since timer start.
  */
 native float Shavit_GetSync(int client);
-
-/**
- * Saves the WR time for the current map on a variable.
- *
- * @param style						Style to get the WR for.
- * @param time						Reference to the time variable. 0.0 will be returned if no records.
- * @param track						Timer track.
- * @noreturn
- */
-#pragma deprecated Use Shavit_GetWorldRecord() instead.
-native void Shavit_GetWRTime(int style, float &time, int track);
 
 /**
  * Retrieves the world record for the given style/track.
@@ -1322,18 +1365,6 @@ native void Shavit_GetWRRecordID(int style, int &recordid, int track);
  * @noreturn
  */
 native void Shavit_GetWRName(int style, char[] wrname, int wrmaxlength, int track);
-
-/**
- * Saves the player's personal best time on a variable.
- *
- * @param client					Client index.
- * @param style						Style to get the PB for.
- * @param time						Reference to the time variable. 0.0 will be returned if no personal record.
- * @param track						Timer track.
- * @noreturn
- */
-#pragma deprecated Use Shavit_GetClientPB() instead.
-native void Shavit_GetPlayerPB(int client, int style, float &time, int track);
 
 /**
  * Retrieves the best time of a player.
@@ -1467,13 +1498,13 @@ native void Shavit_PauseTimer(int client);
 native void Shavit_ResumeTimer(int client, bool teleport = false);
 
 /**
- * Gets a players time offset given a zone.
+ * Gets a players zone offset.
  *
  * @param client					Client index.
  * @param teleport					Zone type (Zone_Start or Zone_End).
- * @return							Time offset if any for the given zone type.
+ * @return							Zone offset fraction if any for the given zone type.
  */
-native float Shavit_GetTimeOffset(int client, int zonetype);
+native float Shavit_GetZoneOffset(int client, int zonetype);
 
 /**
  * Gets distance of a players distance offset given a zone.
@@ -1502,16 +1533,16 @@ native bool Shavit_DeleteReplay(const char[] map, int style, int track, int acco
  * @param entity					Entity index.
  * @return							The engine time of the replay bot's first frame.
  */
-native float Shavit_GetReplayBotFirstFrame(int entity);
+native float Shavit_GetReplayBotFirstFrameTime(int entity);
 
 /**
  * Retrieve the replay bot's entity index.
  *
- * @param track						Trakc you want. -1 if you want the central bot. If no central bot, the first bot it finds it used.
  * @param style						Style you want. -1 if you want the central bot. If no central bot, the first bot it finds it used.
+ * @param track						Track you want. -1 if you want the central bot. If no central bot, the first bot it finds it used.
  * @return							Client index for the replay bot. -1 if not found.
  */
-native int Shavit_GetReplayBotIndex(int track, int style);
+native int Shavit_GetReplayBotIndex(int style, int track);
 
 /**
  * Retrieve the style being played by the replay bot.
@@ -1557,27 +1588,72 @@ native int Shavit_GetReplayStarter(int ent);
  * Really, this is only useful for things like replay props.
  *
  * @param ent						Replay entity.
+ * @param anglediff                 The angle difference between the previous and current y angles.
+ *
  * @return							buttons
  */
-native int Shavit_GetReplayButtons(int ent);
+native int Shavit_GetReplayButtons(int ent, float& anglediff);
 
 /**
  * Retrieves a replay's frame count.
  *
  * @param style						Style.
  * @param track						Track.
- * @noreturn
+ * @return							Frame count.
  */
 native int Shavit_GetReplayFrameCount(int style, int track);
+
+/**
+ * Retrieves a replay's pre-run frame count.
+ *
+ * @param style						Style.
+ * @param track						Track.
+ * @return							Frame count.
+ */
+native int Shavit_GetReplayPreFrames(int style, int track);
+
+/**
+ * Retrieves a replay's post-run frame count.
+ *
+ * @param style						Style.
+ * @param track						Track.
+ * @return							Frame count.
+ */
+native int Shavit_GetReplayPostFrames(int style, int track);
+
+/**
+ * Retrieves the frame count from the currently running replay bot's frame_cache_t.
+ *
+ * @param bot						Replay bot entity.
+ * @return							Frame count.
+ */
+native int Shavit_GetReplayCacheFrameCount(int bot);
+
+/**
+ * Retrieves the pre-run frame count from the currently running replay bot's frame_cache_t.
+ *
+ * @param bot						Replay bot entity.
+ * @return							Frame count.
+ */
+native int Shavit_GetReplayCachePreFrames(int bot);
+
+/**
+ * Retrieves the post-run frame count from the currently running replay bot's frame_cache_t.
+ *
+ * @param bot						Replay bot entity.
+ * @return							Frame count.
+ */
+native int Shavit_GetReplayCachePostFrames(int bot);
 
 /**
  * Retrieves the replay data for the given style and track.
  *
  * @param style						Style.
  * @param track						Track.
+ * @param cheapCloneHandle			False means we duplicate the frames (ArrayList.Clone). True means we clone the handle to the frames (CloneHandle).
  * @return							ArrayList with proper replay data, or null if there is no recorded data.
  */
-native ArrayList Shavit_GetReplayFrames(int style, int track);
+native ArrayList Shavit_GetReplayFrames(int style, int track, bool cheapCloneHandle=false);
 
 /**
  * Retrieves a client's frame count.
@@ -1592,15 +1668,23 @@ native int Shavit_GetClientFrameCount(int client);
  *
  * @param style						Style.
  * @param track						Track.
- * @noreturn
+ * @return							Replay length.
  */
 native float Shavit_GetReplayLength(int style, int track);
+
+/**
+ * Retrieves the replay's total length in seconds from the currently running replay bot's frame_cache_t.
+ *
+ * @param bot						Replay bot entity.
+ * @return							Replay length.
+ */
+native float Shavit_GetReplayCacheLength(int bot);
 
 /**
  * Retrieves an actively playing replay's time.
  *
  * @param entity					Entity index.
- * @return							The bot's time in the replay.
+ * @return							The bot's current time in the replay.
  */
 native float Shavit_GetReplayTime(int entity);
 
@@ -1624,7 +1708,7 @@ native void Shavit_GetReplayName(int style, int track, char[] buffer, int length
  * @param yaw						Horizontal view angle.
  * @noreturn
  */
-native void Shavit_HijackAngles(int client, float pitch, float yaw);
+native void Shavit_HijackAngles(int client, float pitch, float yaw, int ticks);
 
 /**
  * Checks if there's loaded replay data for a bhop style or not.
@@ -1679,7 +1763,7 @@ native void Shavit_OpenStatsMenu(int client, int steamid);
 
 /**
  * Retrieves the amount of #1 records a player has.
- * Requires shavit-stats.
+ * Requires shavit-rankings.
  *
  * @param client					Client index.
  * @param track						Track to retrieve WRs from. -1 to use all tracks. All bonus tracks are combined.
@@ -1691,7 +1775,7 @@ native int Shavit_GetWRCount(int client, int track = -1, int style = -1, bool us
 
 /**
  * Retrieves the number of players who hold #1 records.
- * Requires shavit-stats.
+ * Requires shavit-rankings.
  *
  * @param track						Track to retrieve WRs from. -1 to use all tracks. All bonus tracks are combined.
  * @param style						Style to retrieve WRs from. -1 to use all styles.
@@ -1702,7 +1786,7 @@ native int Shavit_GetWRHolders(int track = -1, int style = -1, bool usecvars = t
 
 /**
  * Retrieves the player's rank based on how many #1 records they hold.
- * Requires shavit-stats.
+ * Requires shavit-rankings.
  *
  * @param client					Client index.
  * @param track						Track to retrieve WRs from. -1 to use all tracks. All bonus tracks are combined.
@@ -1777,7 +1861,7 @@ native bool Shavit_HasStyleSetting(int style, const char[] key);
  * @param value						Value to set the style key to.
  * @param replace					Should the value be set if the given key already exists.
  *
- * @return 							True on success, false on failure. .
+ * @return 							True on success, false on failure.
  */
 native bool Shavit_SetStyleSettingFloat(int style, const char[] key, float value, bool replace = true);
 
@@ -1789,7 +1873,7 @@ native bool Shavit_SetStyleSettingFloat(int style, const char[] key, float value
  * @param value						Value to set the style key to.
  * @param replace					Should the value be set if the given key already exists.
  *
- * @return 							True on success, false on failure. .
+ * @return 							True on success, false on failure.
  */
 native bool Shavit_SetStyleSettingBool(int style, const char[] key, bool value, bool replace = true);
 
@@ -1801,20 +1885,9 @@ native bool Shavit_SetStyleSettingBool(int style, const char[] key, bool value, 
  * @param value						Value to set the style key to.
  * @param replace					Should the value be set if the given key already exists.
  *
- * @return 							True on success, false on failure. .
+ * @return 							True on success, false on failure.
  */
 native bool Shavit_SetStyleSettingInt(int style, const char[] key, int value, bool replace = true);
-
-/**
-* Saves the style settings on `any` references.
-*
-* @param style						Style index.
-* @param StyleSettings				Reference to the settings array.
-* @param size						Size of the StyleSettings buffer, e.g sizeof(stylesettings_t)
-* @return							SP_ERROR_NONE on success, anything else on failure.
-*/
-#pragma deprecated Use different natives or Shavit_GetStyleSetting instead.
-native int Shavit_GetStyleSettings(int style, any[] StyleSettings, int size = sizeof(stylesettings_t));
 
 /**
  * Saves the style related strings on string references.
@@ -1826,6 +1899,16 @@ native int Shavit_GetStyleSettings(int style, any[] StyleSettings, int size = si
  * @return							SP_ERROR_NONE on success, anything else on failure.
  */
 native int Shavit_GetStyleStrings(int style, int stringtype, char[] StyleStrings, int size);
+
+/**
+ * Saves the style related strings on string references.
+ *
+ * @param style                     Style index.
+ * @param strings                   Reference to a stylestrings_t.
+ * @param size                      Max length for the buffer.
+ * @return                          SP_ERROR_NONE on success, anything else on failure.
+ */
+native int Shavit_GetStyleStringsStruct(int style, any[] strings, int size = sizeof(stylestrings_t));
 
 /**
  * Retrieves the amount of styles in the server.
@@ -1852,6 +1935,15 @@ native void Shavit_GetOrderedStyles(int[] arr, int size);
  * @return							SP_ERROR_NONE on success, anything else on failure.
  */
 native int Shavit_GetChatStrings(int stringtype, char[] ChatStrings, int size);
+
+/**
+ * Saves chat related strings on string references.
+ *
+ * @param strings                   Reference to a chatstrings_t.
+ * @param size                      Size of chatstrings_t.
+ * @return                          SP_ERROR_NONE on success, anything else on failure.
+ */
+native int Shavit_GetChatStringsStruct(any[] strings, int size = sizeof(chatstrings_t));
 
 /**
  * Gets the HUD settings of a player.
@@ -1909,18 +2001,20 @@ native void Shavit_LoadSnapshot(int client, any[] snapshot, int size = sizeof(ti
  *
  * @param client					Client index.
  * @param data						ArrayList with proper replay data.
+ * @param cheapCloneHandle			False means we duplicate the frames (ArrayList.Clone). True means we clone the handle to the frames (CloneHandle).
  * @noreturn
  */
-native void Shavit_SetReplayData(int client, ArrayList data);
+native void Shavit_SetReplayData(int client, ArrayList data, bool cheapCloneHandle=false);
 
 /**
  * Saves a player's replay recording frames (if exists) into an ArrayList.
  * To be used by save states/TAS etc.
  *
  * @param client					Client index.
+ * @param cheapCloneHandle			False means we duplicate the frames (Arraylist.Clone). True means we clone the handle to the frames (CloneHandle). This is going to be used for peristent-data in shavit-misc so we don't allocate duplicate memory needlessly.
  * @return							ArrayList with proper replay data, or null if the player has no recorded data.
  */
-native ArrayList Shavit_GetReplayData(int client);
+native ArrayList Shavit_GetReplayData(int client, bool cheapCloneHandle=false);
 
 /**
  * Checks if the given entity is a replay bot (fakeclient) or replay prop.
@@ -1934,14 +2028,14 @@ native bool Shavit_IsReplayEntity(int ent);
  *
  * @param style						Bhop style.
  * @param track						Timer track.
- * @param delay						Delay until starting.
+ * @param delay						Delay until starting. If -1.0, then uses shavit_replay_delay
  * @param client					Client index.
  * @param bot						Bot to play on. Should be of type Replay_Central or Replay_Dynamic. -1 to create new replay bot.
  * @param type						ReplayBotType. Replay_Prop needs `bot` to be -1.
  * @param ignorelimit				Ignore cvar limit for dynamic bots.
- * @return							true if things work and the replay should be starting...
+ * @return							Replay entity. 0 is returned if couldn't be created.
  */
-native bool Shavit_StartReplay(int style, int track, float delay, int client, int bot, bool ignorelimit = false);
+native int Shavit_StartReplay(int style, int track, float delay, int client, int bot, int type, bool ignorelimit = false);
 
 /**
  * Starts a replay with a given set of frames.
@@ -1949,16 +2043,16 @@ native bool Shavit_StartReplay(int style, int track, float delay, int client, in
  *
  * @param style						Bhop style.
  * @param track						Timer track.
- * @param delay						Delay until starting.
+ * @param delay						Delay until starting. If -1.0, then uses shavit_replay_delay
  * @param client					Client index.
  * @param bot						Bot to play on. Should be of type Replay_Central or Replay_Dynamic. -1 to create new replay bot.
  * @param type						ReplayBotType. Replay_Prop needs `bot` to be -1.
  * @param ignorelimit				Ignore cvar limit for dynamic bots.
- * @param cache						framecache_t filled with replay info and frames.
- * @param size						sizeof(framecache_t). Used to throw errors at you if you don't recompile plugins.
- * @return							true if things work and the replay should be starting...
+ * @param cache						frame_cache_t filled with replay info and frames.
+ * @param size						sizeof(frame_cache_t). Used to throw errors at you if you don't recompile plugins.
+ * @return							Replay entity. 0 is returned if couldn't be created.
  */
-native bool Shavit_StartReplayFromFrameCache(int style, int track, float delay, int client, int bot, bool ignorelimit = false, any[] cache, int size = sizeof(framecache_t));
+native int Shavit_StartReplayFromFrameCache(int style, int track, float delay, int client, int bot, int type, bool ignorelimit = false, any[] cache, int size = sizeof(frame_cache_t));
 
 /**
  * Starts a replay from a replay file.
@@ -1966,15 +2060,15 @@ native bool Shavit_StartReplayFromFrameCache(int style, int track, float delay, 
  *
  * @param style						Bhop style.
  * @param track						Timer track.
- * @param delay						Delay until starting.
+ * @param delay						Delay until starting. If -1.0, then uses shavit_replay_delay
  * @param client					Client index.
  * @param bot						Bot to play on. Should be of type Replay_Central or Replay_Dynamic. -1 to create new replay bot.
  * @param type						ReplayBotType. Replay_Prop needs `bot` to be -1.
  * @param ignorelimit				Ignore cvar limit for dynamic bots.
  * @param path						File path to replay
- * @return							true if things work and the replay should be starting...
+ * @return							Replay entity. 0 is returned if couldn't be created.
  */
-native bool Shavit_StartReplayFromFile(int style, int track, float delay, int client, int bot, bool ignorelimit = false, const char[] path);
+native int Shavit_StartReplayFromFile(int style, int track, float delay, int client, int bot, int type, bool ignorelimit = false, const char[] path);
 
 /**
  * Reloads a specific replay into the replay bot cache.
@@ -1990,7 +2084,6 @@ native bool Shavit_ReloadReplay(int style, int track, bool restart, char[] path 
 
 /**
  * Reloads all of the replays for the map.
- * Note: Not guaranteed to work with legacy replay bots.
  *
  * @param restart					Restart the playback of the replay bots?
  * @return							Amount of loaded replays.
@@ -2034,7 +2127,6 @@ native float Shavit_GetClosestReplayVelocityDifference(int client, bool threeD);
 /**
  * Use this native to stop the click sound that plays upon chat messages.
  * Call it before each Shavit_PrintToChat().
- * Shavit_PrintToChatAll() is not guaranteed to disable the sound from playing.
  *
  * @noreturn
  */
@@ -2060,10 +2152,10 @@ native bool Shavit_IsKZMap();
  * Gets the map tier for a specified map.
  * Use the map's display name.
  *
- * @param map						Map to get the tier of.
+ * @param map						Map to get the tier of. Using "" will get the current map's tier.
  * @return							Map tier. 0 if no results were found.
  */
-native int Shavit_GetMapTier(const char[] map);
+native int Shavit_GetMapTier(const char[] map = "");
 
 /**
  * Gets a StringMap that contains all the cached map tiers.
@@ -2108,6 +2200,16 @@ native int Shavit_CanPause(int client);
  * @return							PrintToChat()
  */
 native int Shavit_PrintToChat(int client, const char[] format, any ...);
+
+/**
+ * Use this native when printing anything in chat if it's related to the timer.
+ * This native will auto-assign colors and a chat prefix.
+ *
+ * @param format					Formatting rules.
+ * @param any						Variable number of format parameters.
+ * @noreturn
+ */
+native void Shavit_PrintToChatAll(const char[] format, any ...);
 
 /**
  * Logs an entry to bhoptimer's log file.
@@ -2290,16 +2392,7 @@ native int Shavit_GetTimesTeleported(int client);
  *
  * @return 							Preframe count
  */
-native int Shavit_GetPlayerPreFrame(int client);
-
-/*
- * returns the number of timer preframes in the players current run.
- *
- * @param client					Client index
- *
- * @return 							Timer preframe count
- */
-native int Shavit_GetPlayerTimerFrame(int client);
+native int Shavit_GetPlayerPreFrames(int client);
 
 /*
  * Sets player's preframe length.
@@ -2310,17 +2403,7 @@ native int Shavit_GetPlayerTimerFrame(int client);
  *
  * @noreturn
  */
-native void Shavit_SetPlayerPreFrame(int client, int PreFrame);
-
-/*
- * Sets player's timer preframe length.
- *
- * @param client					Client index
- * @param TimerPreFrame				Timer start frame length
- *
- * @noreturn
- */
-native void Shavit_SetPlayerTimerFrame(int client, int TimerPreFrame);
+native void Shavit_SetPlayerPreFrames(int client, int PreFrame);
 
 /*
  * Retrieves the player's chatrank trimmed and without colors.
@@ -2347,22 +2430,14 @@ native void Shavit_GetPlainChatrank(int client, char[] buf, int buflen, bool inc
  */
 native void Shavit_DeleteWR(int style, int track, const char[] map, int accountid, int recordid, bool delete_sql, bool update_cache);
 
-// same as Shavit_PrintToChat() but loops through the whole server
-// code stolen from the base halflife.inc file
-stock void Shavit_PrintToChatAll(const char[] format, any ...)
-{
-	char buffer[300];
-
-	for(int i = 1; i <= MaxClients; i++)
-	{
-		if(IsClientInGame(i))
-		{
-			SetGlobalTransTarget(i);
-			VFormat(buffer, 300, format, 2);
-			Shavit_PrintToChat(i, "%s", buffer);
-		}
-	}
-}
+/*
+ * Used to find a looping replay bot from the loop config name.
+ *
+ * @param name                      Looping bot config name. An example is "Other Styles" from the default set of looping bots in shavit-replay.cfg
+ *
+ * @return                          The client index of the looping replay bot. -1 if could not find the config name. 0 if could not find the replay bot client.
+ */
+native int Shavit_GetLoopingBotByName(const char[] name);
 
 public SharedPlugin __pl_shavit =
 {
@@ -2388,19 +2463,18 @@ public void __pl_shavit_SetNTVOptional()
 	MarkNativeAsOptional("Shavit_FormatChat");
 	MarkNativeAsOptional("Shavit_GetBhopStyle");
 	MarkNativeAsOptional("Shavit_GetChatStrings");
+	MarkNativeAsOptional("Shavit_GetChatStringsStruct");
 	MarkNativeAsOptional("Shavit_GetClientCompletions");
 	MarkNativeAsOptional("Shavit_GetClientJumps");
 	MarkNativeAsOptional("Shavit_GetClientPB");
 	MarkNativeAsOptional("Shavit_GetClientTime");
 	MarkNativeAsOptional("Shavit_GetClientTrack");
 	MarkNativeAsOptional("Shavit_GetDatabase");
-	MarkNativeAsOptional("Shavit_GetDB");
 	MarkNativeAsOptional("Shavit_GetHUDSettings");
 	MarkNativeAsOptional("Shavit_GetMapTier");
 	MarkNativeAsOptional("Shavit_GetMapTiers");
 	MarkNativeAsOptional("Shavit_GetOrderedStyles");
 	MarkNativeAsOptional("Shavit_GetPerfectJumps");
-	MarkNativeAsOptional("Shavit_GetPlayerPB");
 	MarkNativeAsOptional("Shavit_GetPoints");
 	MarkNativeAsOptional("Shavit_GetRank");
 	MarkNativeAsOptional("Shavit_GetRankedPlayers");
@@ -2408,7 +2482,7 @@ public void __pl_shavit_SetNTVOptional()
 	MarkNativeAsOptional("Shavit_GetRecordAmount");
 	MarkNativeAsOptional("Shavit_GetReplayBotCurrentFrame");
 	MarkNativeAsOptional("Shavit_GetClientFrameCount");
-	MarkNativeAsOptional("Shavit_GetReplayBotFirstFrame");
+	MarkNativeAsOptional("Shavit_GetReplayBotFirstFrameTime");
 	MarkNativeAsOptional("Shavit_GetReplayBotIndex");
 	MarkNativeAsOptional("Shavit_GetReplayBotStyle");
 	MarkNativeAsOptional("Shavit_GetReplayBotTrack");
@@ -2422,19 +2496,19 @@ public void __pl_shavit_SetNTVOptional()
 	MarkNativeAsOptional("Shavit_GetReplayStatus");
 	MarkNativeAsOptional("Shavit_GetReplayTime");
 	MarkNativeAsOptional("Shavit_GetStageZone");
+	MarkNativeAsOptional("Shavit_GetStageCount");
 	MarkNativeAsOptional("Shavit_GetStrafeCount");
 	MarkNativeAsOptional("Shavit_GetStyleCount");
 	MarkNativeAsOptional("Shavit_GetStyleSetting");
 	MarkNativeAsOptional("Shavit_GetStyleSettingInt");
 	MarkNativeAsOptional("Shavit_GetStyleSettingFloat");
 	MarkNativeAsOptional("Shavit_HasStyleSetting");
-	MarkNativeAsOptional("Shavit_GetStyleSettings");
 	MarkNativeAsOptional("Shavit_GetStyleStrings");
+	MarkNativeAsOptional("Shavit_GetStyleStringsStruct");
 	MarkNativeAsOptional("Shavit_GetSync");
-	MarkNativeAsOptional("Shavit_GetTimeOffset");
+	MarkNativeAsOptional("Shavit_GetZoneOffset");
 	MarkNativeAsOptional("Shavit_GetDistanceOffset");
 	MarkNativeAsOptional("Shavit_GetTimeForRank");
-	MarkNativeAsOptional("Shavit_GetTimer");
 	MarkNativeAsOptional("Shavit_GetTimerStatus");
 	MarkNativeAsOptional("Shavit_GetWorldRecord");
 	MarkNativeAsOptional("Shavit_GetWRCount");
@@ -2442,7 +2516,6 @@ public void __pl_shavit_SetNTVOptional()
 	MarkNativeAsOptional("Shavit_GetWRHolderRank");
 	MarkNativeAsOptional("Shavit_GetWRName");
 	MarkNativeAsOptional("Shavit_GetWRRecordID");
-	MarkNativeAsOptional("Shavit_GetWRTime");
 	MarkNativeAsOptional("Shavit_GetZoneData");
 	MarkNativeAsOptional("Shavit_GetZoneFlags");
 	MarkNativeAsOptional("Shavit_HasStyleAccess");
@@ -2459,6 +2532,7 @@ public void __pl_shavit_SetNTVOptional()
 	MarkNativeAsOptional("Shavit_OpenStatsMenu");
 	MarkNativeAsOptional("Shavit_PauseTimer");
 	MarkNativeAsOptional("Shavit_PrintToChat");
+	MarkNativeAsOptional("Shavit_PrintToChatAll");
 	MarkNativeAsOptional("Shavit_Rankings_DeleteMap");
 	MarkNativeAsOptional("Shavit_ReloadLeaderboards");
 	MarkNativeAsOptional("Shavit_ReloadReplay");
@@ -2491,15 +2565,30 @@ public void __pl_shavit_SetNTVOptional()
 	MarkNativeAsOptional("Shavit_GetCurrentCheckpoint");
 	MarkNativeAsOptional("Shavit_SetCurrentCheckpoint");
 	MarkNativeAsOptional("Shavit_GetTimesTeleported");
-	MarkNativeAsOptional("Shavit_GetPlayerPreFrame");
-	MarkNativeAsOptional("Shavit_GetPlayerTimerFrame");
-	MarkNativeAsOptional("Shavit_SetPlayerPreFrame");
+	MarkNativeAsOptional("Shavit_GetPlayerPreFrames");
+	MarkNativeAsOptional("Shavit_SetPlayerPreFrames");
 	MarkNativeAsOptional("Shavit_GetClosestReplayTime");
-	MarkNativeAsOptional("Shavit_SetPlayerTimerFrame");
 	MarkNativeAsOptional("Shavit_SetStyleSetting");
 	MarkNativeAsOptional("Shavit_SetStyleSettingFloat");
 	MarkNativeAsOptional("Shavit_SetStyleSettingBool");
 	MarkNativeAsOptional("Shavit_SetStyleSettingInt");
 	MarkNativeAsOptional("Shavit_GetPlainChatrank");
+	MarkNativeAsOptional("Shavit_GetClosestReplayVelocityDifference");
+	MarkNativeAsOptional("Shavit_IsReplayEntity");
+	MarkNativeAsOptional("Shavit_GetReplayButtons");
+	MarkNativeAsOptional("Shavit_GetClosestReplayStyle");
+	MarkNativeAsOptional("Shavit_SetClosestReplayStyle");
+	MarkNativeAsOptional("Shavit_GetReplayCacheFrameCount");
+	MarkNativeAsOptional("Shavit_GetReplayCacheLength");
+	MarkNativeAsOptional("Shavit_StartReplayFromFrameCache");
+	MarkNativeAsOptional("Shavit_StartReplayFromFile");
+	MarkNativeAsOptional("Shavit_GetClientLastStage");
+	MarkNativeAsOptional("Shavit_GetStageWR");
+	MarkNativeAsOptional("Shavit_GetStagePB");
+	MarkNativeAsOptional("Shavit_GetReplayPreFrames");
+	MarkNativeAsOptional("Shavit_GetReplayPostFrames");
+	MarkNativeAsOptional("Shavit_GetReplayCachePreFrames");
+	MarkNativeAsOptional("Shavit_GetReplayCachePostFrames");
+	MarkNativeAsOptional("Shavit_GetLoopingBotByName");
 }
 #endif

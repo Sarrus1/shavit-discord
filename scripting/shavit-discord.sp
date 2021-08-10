@@ -7,7 +7,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "1.2.1"
+#define PLUGIN_VERSION "1.3"
 
 
 char g_cCurrentMap[PLATFORM_MAX_PATH],
@@ -197,7 +197,7 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 
 stock void GetProfilePictureURL( int client, int style, float time, int jumps, int strafes, float sync, int track, float oldwr, float oldtime, float perfs)
 {
-	HTTPClient httpClient;
+	HTTPRequest httpRequest;
 
 	DataPack pack = new DataPack();
 	pack.WriteCell(client);
@@ -217,9 +217,9 @@ stock void GetProfilePictureURL( int client, int style, float time, int jumps, i
 
 	GetClientAuthId(client, AuthId_SteamID64, szSteamID, sizeof szSteamID, true);
 
-	Format(szRequestBuffer, sizeof szRequestBuffer, "ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s&format=json", g_szApiKey,szSteamID);
-	httpClient = new HTTPClient("https://api.steampowered.com");
-	httpClient.Get(szRequestBuffer, OnResponseReceived, pack);
+	Format(szRequestBuffer, sizeof szRequestBuffer, "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s&format=json", g_szApiKey,szSteamID);
+	httpRequest = new HTTPRequest(szRequestBuffer);
+	httpRequest.Get(OnResponseReceived, pack);
 }
 
 

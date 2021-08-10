@@ -76,9 +76,151 @@ typeset HTTPFileCallback
 	function void (HTTPStatus status, any value, const char[] error);
 };
 
+methodmap HTTPRequest < Handle
+{
+	// Creates an HTTP request.
+	//
+	// The Handle is automatically freed when the request is performed.
+	// Otherwise, the Handle must be freed via delete or CloseHandle().
+	//
+	// @param url        URL to the REST API endpoint.
+	public native HTTPRequest(const char[] url);
+
+	// Appends a parameter to the form data.
+	//
+	// The parameter name and value are encoded according to RFC 3986.
+	//
+	// @param name       Parameter name.
+    // @param format     Formatting rules.
+    // @param ...        Variable number of format parameters.
+	public native void AppendFormParam(const char[] name, const char[] format, any ...);
+
+	// Appends a query parameter to the URL.
+	//
+	// The parameter name and value are encoded according to RFC 3986.
+	//
+	// @param name       Parameter name.
+    // @param format     Formatting rules.
+    // @param ...        Variable number of format parameters.
+	public native void AppendQueryParam(const char[] name, const char[] format, any ...);
+
+	// Sets the credentials for HTTP Basic authentication.
+	//
+	// @param username   Username to use.
+	// @param password   Password to use.
+	public native void SetBasicAuth(const char[] username, const char[] password);
+
+	// Sets an HTTP header.
+	//
+	// @param name       Header name.
+    // @param format     Formatting rules.
+    // @param ...        Variable number of format parameters.
+	public native void SetHeader(const char[] name, const char[] format, any ...);
+
+	// Performs an HTTP GET request.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param callback   A function to use as a callback when the request has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void Get(HTTPRequestCallback callback, any value = 0);
+
+	// Performs an HTTP POST request.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param data       JSON data to send.
+	// @param callback   A function to use as a callback when the request has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void Post(JSON data, HTTPRequestCallback callback, any value = 0);
+
+	// Performs an HTTP PUT request.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param data       JSON data to send.
+	// @param callback   A function to use as a callback when the request has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void Put(JSON data, HTTPRequestCallback callback, any value = 0);
+
+	// Performs an HTTP PATCH request.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param data       JSON data to send.
+	// @param callback   A function to use as a callback when the request has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void Patch(JSON data, HTTPRequestCallback callback, any value = 0);
+
+	// Performs an HTTP DELETE request.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param callback   A function to use as a callback when the request has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void Delete(HTTPRequestCallback callback, any value = 0);
+
+	// Downloads a file.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param path       File path to write to.
+	// @param callback   A function to use as a callback when the download has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void DownloadFile(const char[] path, HTTPFileCallback callback, any value = 0);
+
+	// Uploads a file.
+	//
+	// This function performs an HTTP PUT request. The file contents are sent in the request body.
+	// This function closes the request Handle after completing.
+	//
+	// @param path       File path to read from.
+	// @param callback   A function to use as a callback when the upload has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void UploadFile(const char[] path, HTTPFileCallback callback, any value = 0);
+
+	// Performs an HTTP POST request with form data.
+	//
+	// This function closes the request Handle after completing.
+	//
+	// @param callback   A function to use as a callback when the request has finished.
+	// @param value      Optional value to pass to the callback function.
+	public native void PostForm(HTTPRequestCallback callback, any value = 0);
+
+	// Connect timeout in seconds. Defaults to 10.
+	property int ConnectTimeout {
+		public native get();
+		public native set(int connectTimeout);
+	}
+
+	// Maximum number of redirects to follow. Defaults to 5.
+	property int MaxRedirects {
+		public native get();
+		public native set(int maxRedirects);
+	}
+
+	// Maximum download speed in bytes per second. Defaults to unlimited speed.
+	property int MaxRecvSpeed {
+		public native get();
+		public native set(int maxSpeed);
+	}
+
+	// Maximum upload speed in bytes per second. Defaults to unlimited speed.
+	property int MaxSendSpeed {
+		public native get();
+		public native set(int maxSpeed);
+	}
+
+	// Timeout in seconds. Defaults to 30.
+	property int Timeout {
+		public native get();
+		public native set(int timeout);
+	}
+}
+
 methodmap HTTPResponse
 {
-	// Retrieves a HTTP header from the response.
+	// Retrieves an HTTP header from the response.
 	//
 	// @param name       Header name.
 	// @param buffer     String buffer to store value.
@@ -99,102 +241,117 @@ methodmap HTTPResponse
 	}
 };
 
+// Deprecated. Use HTTPRequest instead.
 methodmap HTTPClient < Handle
 {
-	// Creates a HTTP client.
+	// Creates an HTTP client.
 	//
 	// The HTTPClient must be freed via delete or CloseHandle().
 	//
 	// @param baseURL    Base URL to the REST API.
+	#pragma deprecated Use HTTPRequest instead.
 	public native HTTPClient(const char[] baseURL);
 
-	// Sets a HTTP header to be used for all requests.
+	// Sets an HTTP header to be used for all requests.
 	//
 	// @param name       Header name.
 	// @param value      String value to set.
+	#pragma deprecated Use HTTPRequest.SetHeader() instead.
 	public native void SetHeader(const char[] name, const char[] value);
 
-	// Performs a HTTP GET request.
+	// Performs an HTTP GET request.
 	//
 	// @param endpoint   API endpoint to request.
 	// @param callback   A function to use as a callback when the request has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.Get() instead.
 	public native void Get(const char[] endpoint, HTTPRequestCallback callback, any value = 0);
 
-	// Performs a HTTP POST request.
+	// Performs an HTTP POST request.
 	//
 	// @param endpoint   API endpoint to request.
 	// @param data       JSON data to send.
 	// @param callback   A function to use as a callback when the request has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.Post() instead.
 	public native void Post(const char[] endpoint, JSON data, HTTPRequestCallback callback, any value = 0);
 
-	// Performs a HTTP PUT request.
+	// Performs an HTTP PUT request.
 	//
 	// @param endpoint   API endpoint to request.
 	// @param data       JSON data to send.
 	// @param callback   A function to use as a callback when the request has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.Put() instead.
 	public native void Put(const char[] endpoint, JSON data, HTTPRequestCallback callback, any value = 0);
 
-	// Performs a HTTP PATCH request.
+	// Performs an HTTP PATCH request.
 	//
 	// @param endpoint   API endpoint to request.
 	// @param data       JSON data to send.
 	// @param callback   A function to use as a callback when the request has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.Patch() instead.
 	public native void Patch(const char[] endpoint, JSON data, HTTPRequestCallback callback, any value = 0);
 
-	// Performs a HTTP DELETE request.
+	// Performs an HTTP DELETE request.
 	//
 	// @param endpoint   API endpoint to request.
 	// @param callback   A function to use as a callback when the request has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.Delete() instead.
 	public native void Delete(const char[] endpoint, HTTPRequestCallback callback, any value = 0);
 
 	// Downloads a file.
 	//
 	// @param endpoint   API endpoint to download from.
-	// @param path       File to write to.
+	// @param path       File path to write to.
 	// @param callback   A function to use as a callback when the download has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.DownloadFile() instead.
 	public native void DownloadFile(const char[] endpoint, const char[] path, HTTPFileCallback callback, any value = 0);
 
 	// Uploads a file.
 	//
-	// This performs a HTTP PUT request. The file contents are in the request body.
+	// This function performs an HTTP PUT request. The file contents are sent in the request body.
 	//
 	// @param endpoint   API endpoint to upload to.
-	// @param path       File to read from.
+	// @param path       File path to read from.
 	// @param callback   A function to use as a callback when the upload has finished.
 	// @param value      Optional value to pass to the callback function.
+	#pragma deprecated Use HTTPRequest.UploadFile() instead.
 	public native void UploadFile(const char[] endpoint, const char[] path, HTTPFileCallback callback, any value = 0);
 
 	// Connect timeout in seconds. Defaults to 10.
+	#pragma deprecated Use HTTPRequest.ConnectTimeout instead.
 	property int ConnectTimeout {
 		public native get();
 		public native set(int connectTimeout);
 	}
 
 	// Follow HTTP 3xx redirects. Defaults to true.
+	#pragma deprecated Use HTTPRequest.MaxRedirects instead.
 	property bool FollowLocation {
 		public native get();
 		public native set(bool followLocation);
 	}
 
 	// Timeout in seconds. Defaults to 30.
+	#pragma deprecated Use HTTPRequest.Timeout instead.
 	property int Timeout {
 		public native get();
 		public native set(int timeout);
 	}
 
-	// Max upload speed in bytes per second. Defaults to unlimited speed.
+	// Maximum upload speed in bytes per second. Defaults to unlimited speed.
+	#pragma deprecated Use HTTPRequest.MaxSendSpeed instead.
 	property int MaxSendSpeed {
 		public native get();
 		public native set(int speed);
 	}
 
-	// Max download speed in bytes per second. Defaults to unlimited speed.
+	// Maximum download speed in bytes per second. Defaults to unlimited speed.
+	#pragma deprecated Use HTTPRequest.MaxRecvSpeed instead.
 	property int MaxRecvSpeed {
 		public native get();
 		public native set(int speed);
