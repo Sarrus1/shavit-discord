@@ -41,7 +41,7 @@ public void OnPluginStart()
 {
 	g_cvMinimumrecords = CreateConVar("sm_bhop_discord_min_record", "0", "Minimum number of records before they are sent to the discord channel.", _, true, 0.0);
 	g_cvWebhook = CreateConVar("sm_bhop_discord_webhook", "", "The webhook to the discord channel where you want record messages to be sent.", FCVAR_PROTECTED);
-	g_cvThumbnailUrlRoot = CreateConVar("sm_bhop_discord_thumbnail_root_url", "https://image.gametracker.com/images/maps/160x120/csgo/", "The base url of where the Discord images are stored. Leave blank to disable.");
+	g_cvThumbnailUrlRoot = CreateConVar("sm_bhop_discord_thumbnail_root_url", "https://image.gametracker.com/images/maps/160x120/csgo/${mapname}.jpg", "The base url of where the Discord images are stored. Leave blank to disable.");
 	g_cvBotUsername = CreateConVar("sm_bhop_discord_username", "", "Username of the bot");
 	g_cvFooterUrl = CreateConVar("sm_bhop_discord_footer_url", "https://images-ext-1.discordapp.net/external/tfTL-r42Kv1qP4FFY6sQYDT1BBA2fXzDjVmcknAOwNI/https/images-ext-2.discordapp.net/external/3K6ho0iMG_dIVSlaf0hFluQFRGqC2jkO9vWFUlWYOnM/https/images-ext-2.discordapp.net/external/aO9crvExsYt5_mvL72MFLp92zqYJfTnteRqczxg7wWI/https/discordsl.com/assets/img/img.png", "The url of the footer icon, leave blank to disable.");
 	g_cvMainEmbedColor = CreateConVar("sm_bhop_discord_main_color", "#00ffff", "Color of embed for when main wr is beaten");
@@ -170,8 +170,7 @@ stock void sendDiscordAnnouncement(int client, int style, float time, int jumps,
 
 	if (!StrEqual(szUrl, ""))
 	{
-		StrCat(szUrl, sizeof(szUrl), g_cCurrentMap);
-		StrCat(szUrl, sizeof(szUrl), ".jpg");
+		ReplaceString(szUrl, sizeof szUrl, "${mapname}", g_cCurrentMap);
 	}
 
 	if(StrEqual(g_szPictureURL, ""))
